@@ -1,9 +1,9 @@
 mj:
   discord:
-    bot-token: MTEyMjQ0ODAxNjE4NDQ0MjkxMA.GADm28.uJ5El2mNZYlf_WyCOIYGD3s0gNg0ZKKrz5ZByc #机器人token
-    guild-id: 1101022060710469672 #服务器id
-    channel-id: 1101022061184421920  #频道id
-    user-token: MTEwMTAyMTQ1NDU5OTk5NTQ2NA.GgiVsF.znmijF0cFJ7KXY_2dlcy_aHvnPHJApuP9idI_8  #用户id
+    bot-token: xxx #机器人token
+    guild-id: xxx #服务器id
+    channel-id: xxx  #频道id
+    user-token: xxx  #用户id
     session-id: 4b555b3e92e96bd521f7eab18f036c20 #回话id
     user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Safari/537.36
     user-wss: true
