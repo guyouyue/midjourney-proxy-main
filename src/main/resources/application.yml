@@ -3,8 +3,8 @@ mj:
     bot-token: xxx #机器人token
     guild-id: xxx #服务器id
     channel-id: xxx  #频道id
-    user-token: xxx  #用户id
-    session-id: 4b555b3e92e96bd521f7eab18f036c20 #回话id
+    user-token: xxx  #用户token
+    session-id: xxx
     user-agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/112.0.0.0 Safari/537.36
     user-wss: true
   task-store:
@@ -12,6 +12,10 @@ mj:
     timeout: 30d
   translate-way: null
   queue:
-    timeout-minutes: 5
-    core-size: 3
-    queue-size: 10
+    timeout-minutes: 15
+    core-size: 10
+    queue-size: 30
+  mengWang:
+    smApiKey: xxx
+    phone: xxx
+

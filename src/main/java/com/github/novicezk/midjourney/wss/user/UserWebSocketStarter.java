@@ -2,13 +2,11 @@ package com.github.novicezk.midjourney.wss.user;
 
 import cn.hutool.core.text.CharSequenceUtil;
 import cn.hutool.core.thread.ThreadUtil;
+import com.github.mongwang.MongWangSMSApi;
 import com.github.novicezk.midjourney.ProxyProperties;
 import com.github.novicezk.midjourney.support.DiscordHelper;
 import com.github.novicezk.midjourney.wss.WebSocketStarter;
-import com.neovisionaries.ws.client.WebSocket;
-import com.neovisionaries.ws.client.WebSocketAdapter;
-import com.neovisionaries.ws.client.WebSocketFactory;
-import com.neovisionaries.ws.client.WebSocketFrame;
+import com.neovisionaries.ws.client.*;
 import eu.bitwalker.useragentutils.UserAgent;
 import lombok.extern.slf4j.Slf4j;
 import net.dv8tion.jda.api.utils.data.DataArray;
@@ -17,9 +15,14 @@ import net.dv8tion.jda.api.utils.data.DataType;
 import net.dv8tion.jda.internal.requests.WebSocketCode;
 import net.dv8tion.jda.internal.utils.compress.Decompressor;
 import net.dv8tion.jda.internal.utils.compress.ZlibDecompressor;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Lazy;
+import org.springframework.stereotype.Component;
 
 import javax.annotation.Resource;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.Executors;
@@ -28,9 +31,12 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
+@Component
 @Slf4j
 public class UserWebSocketStarter extends WebSocketAdapter implements WebSocketStarter {
-	private static final int CONNECT_RETRY_LIMIT = 3;
+	@Value("${mj.mengWang.phone}")
+	private String phone;
+	private static final int CONNECT_RETRY_LIMIT = 50;
 
 	private final String userToken;
 	private final String userAgent;
@@ -49,6 +55,9 @@ public class UserWebSocketStarter extends WebSocketAdapter implements WebSocketS
 	private UserMessageListener userMessageListener;
 	@Resource
 	private DiscordHelper discordHelper;
+	@Resource
+	@Lazy
+	private MongWangSMSApi mongWangSMSApi;
 
 	private final ProxyProperties properties;
 
@@ -62,16 +71,22 @@ public class UserWebSocketStarter extends WebSocketAdapter implements WebSocketS
 
 	@Override
 	public synchronized void start() throws Exception {
-		this.decompressor = new ZlibDecompressor(2048);
-		this.heartExecutor = Executors.newSingleThreadScheduledExecutor();
-		WebSocketFactory webSocketFactory = createWebSocketFactory(this.properties);
-		this.socket = webSocketFactory.createSocket(this.discordHelper.getWss() + "/?encoding=json&v=9&compress=zlib-stream");
-		this.socket.addListener(this);
-		this.socket.addHeader("Accept-Encoding", "gzip, deflate, br").addHeader("Accept-Language", "en-US,en;q=0.9")
-				.addHeader("Cache-Control", "no-cache").addHeader("Pragma", "no-cache")
-				.addHeader("Sec-WebSocket-Extensions", "permessage-deflate; client_max_window_bits")
-				.addHeader("User-Agent", this.userAgent);
-		this.socket.connect();
+		try {
+			log.info("代理连接开始,心跳日志时间");
+			this.decompressor = new ZlibDecompressor(2048);
+			this.heartExecutor = Executors.newSingleThreadScheduledExecutor();
+			WebSocketFactory webSocketFactory = createWebSocketFactory(this.properties);
+			this.socket = webSocketFactory.createSocket(this.discordHelper.getWss() + "/?encoding=json&v=9&compress=zlib-stream");
+			this.socket.addListener(this);
+			this.socket.addHeader("Accept-Encoding", "gzip, deflate, br").addHeader("Accept-Language", "en-US,en;q=0.9")
+					.addHeader("Cache-Control", "no-cache").addHeader("Pragma", "no-cache")
+					.addHeader("Sec-WebSocket-Extensions", "permessage-deflate; client_max_window_bits")
+					.addHeader("User-Agent", this.userAgent);
+			this.socket.connect();
+			log.info("代理连接成功,心跳日志时间");
+		} catch (Exception e) {
+			log.error("代理连接异常" + e);
+		}
 	}
 
 	@Override
@@ -100,7 +115,7 @@ public class UserWebSocketStarter extends WebSocketAdapter implements WebSocketS
 			}
 			sayHello();
 		} else if (opCode == WebSocketCode.HEARTBEAT_ACK) {
-			log.trace("[gateway] Heartbeat ack.");
+			log.debug("[gateway] Heartbeat ack.");
 		} else if (opCode == WebSocketCode.HEARTBEAT) {
 			send(DataObject.empty().put("op", WebSocketCode.HEARTBEAT).put("d", this.sequence));
 		} else if (opCode == WebSocketCode.INVALIDATE_SESSION) {
@@ -143,7 +158,7 @@ public class UserWebSocketStarter extends WebSocketAdapter implements WebSocketS
 		});
 	}
 
-	private void retryStart(int currentRetryTime) throws Exception {
+	private void retryStart(int currentRetryTime) {
 		try {
 			start();
 		} catch (Exception e) {
@@ -151,10 +166,15 @@ public class UserWebSocketStarter extends WebSocketAdapter implements WebSocketS
 				currentRetryTime++;
 				log.warn("[gateway] Websocket start fail, retry {} time... error: {}", currentRetryTime,
 						e.getMessage());
-				Thread.sleep(5000L);
+				try {
+					Thread.sleep(2000L);
+				} catch (InterruptedException ex) {
+					Thread.currentThread().interrupt();
+				}
 				retryStart(currentRetryTime);
 			} else {
-				throw e;
+				log.error("尝试次数耗尽");//
+				mongWangSMSApi.sendSms(phone, "mj代理服务器异常,需要人工介入");
 			}
 		}
 	}
@@ -195,8 +215,9 @@ public class UserWebSocketStarter extends WebSocketAdapter implements WebSocketS
 		}
 	}
 
-	private void heartbeat() {
+	private void heartbeat()  {
 		if (!this.connected) {
+			this.retryStart(0);
 			return;
 		}
 		send(DataObject.empty().put("op", WebSocketCode.HEARTBEAT).put("d", this.sequence));
@@ -220,7 +241,7 @@ public class UserWebSocketStarter extends WebSocketAdapter implements WebSocketS
 	}
 
 	protected void send(DataObject message) {
-		log.trace("[gateway] > {}", message);
+		log.debug("[gateway] > {}", message);
 		this.socket.sendText(message.toString());
 	}
 
